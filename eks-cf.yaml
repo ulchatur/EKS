@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create an EKS cluster.
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for EKS cluster.
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for EKS cluster.
+
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Description: Security Groups for EKS cluster.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Key Pair for EKS cluster nodes.
+
+  MasterNodeInstanceType:
+    Type: String
+    Default: t3a.medium
+    AllowedValues:
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+    Description: Master node Instance type.
+
+  WorkerNodeInstanceType:
+    Type: String
+    Default: t3a.medium
+    AllowedValues:
+      - t3a.medium
+      - t3a.large
+      - t3a.xlarge
+    Description: Worker node Instance type.
+
+  MasterNodeCount:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 5
+    Description: Master node count.
+
+  WorkerNodeCount:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    MaxValue: 15
+    Description: Worker node count.
+
+Resources:
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: eks.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonVPCFullAccess
+        - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ec2.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: KS-cluster
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      ResourcesVpcConfig:
+        SubnetIds: !Ref SubnetIds
+        SecurityGroupIds: !Ref SecurityGroupIds
+
+  WorkerNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodegroupName: worker-node-group
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets: !Ref SubnetIds
+      InstanceTypes:
+        - !Ref WorkerNodeInstanceType
+      ScalingConfig:
+        DesiredSize: !Ref WorkerNodeCount
+        MinSize: 1
+        MaxSize: 10
+      AmiType: AL2_x86_64
+      RemoteAccess:
+        Ec2SshKey: !Ref KeyName
+
+Outputs:
+  EKSClusterName:
+    Description: EKS cluster name.
+    Value: !Ref EKSCluster
+
+  WorkerNodeGroupName:
+    Description: Worker node group name.
+    Value: !Ref WorkerNodeGroup
